@@ -6,24 +6,9 @@ import pandas as pd
 from datetime import datetime
 
 if not firebase_admin._apps:
-    cred = None
-    
-    # 1. Tenta carregar do st.secrets (para deploy no Streamlit Cloud)
-    try:
-        if "firebase" in st.secrets:
-            cred_dict = dict(st.secrets["firebase"])
-            cred = credentials.Certificate(cred_dict)
-    except Exception as e:
-        st.warning(f"Aviso ao carregar st.secrets: {e}")
-
-    # 2. Se não encontrou nos secrets, usa o arquivo local "firebase_key.json"
-    if cred is None and os.path.exists("firebase_key.json"):
-        cred = credentials.Certificate("firebase_key.json")
-
-    # 3. Alerta caso nenhuma credencial seja encontrada
-    if cred is None:
-        raise FileNotFoundError("As credenciais do Firebase não foram encontradas nem nos Secrets do Streamlit nem no arquivo 'firebase_key.json'.")
-
+    # Lê diretamente dos Secrets do Streamlit Cloud
+    cred_dict = dict(st.secrets["firebase"])
+    cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()

@@ -13,16 +13,16 @@ if not firebase_admin._apps:
         if "firebase" in st.secrets:
             cred_dict = dict(st.secrets["firebase"])
             cred = credentials.Certificate(cred_dict)
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"Aviso ao carregar st.secrets: {e}")
 
     # 2. Se não encontrou nos secrets, usa o arquivo local "firebase_key.json"
     if cred is None and os.path.exists("firebase_key.json"):
         cred = credentials.Certificate("firebase_key.json")
 
-    # 3. Alerta caso o arquivo de credenciais não seja encontrado
+    # 3. Alerta caso nenhuma credencial seja encontrada
     if cred is None:
-        raise FileNotFoundError("Arquivo 'firebase_key.json' não foi encontrado na pasta do projeto.")
+        raise FileNotFoundError("As credenciais do Firebase não foram encontradas nem nos Secrets do Streamlit nem no arquivo 'firebase_key.json'.")
 
     firebase_admin.initialize_app(cred)
 

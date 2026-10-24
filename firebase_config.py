@@ -16,15 +16,16 @@ def _cliente():
     if not firebase_admin._apps:
         cred = None
         
-        # 1. Tentar ler dos Segredos do Streamlit Cloud
         try:
             if hasattr(st, "secrets") and "firebase" in st.secrets:
                 sec = st.secrets["firebase"]
                 pk = str(sec.get("private_key", ""))
                 
-                # Tratamento robusto e limpeza da chave privada PEM
-                pk = pk.replace("\\n", "\n").strip()
-                pk = pk.strip('"\'')
+                # Limpeza cirúrgica: substitui qualquer variação de quebra de linha com barra invertida
+                pk = pk.replace("\\\\n", "\n").replace("\\n", "\n")
+                
+                # Garante que os limites do certificado PEM estão limpos de aspas ou espaços extra
+                pk = pk.strip().strip('"\'')
                 
                 secret_dict = {
                     "type": str(sec.get("type", "service_account")),
@@ -42,15 +43,8 @@ def _cliente():
         except Exception as e:
             st.error(f"Erro ao processar credenciais dos Secrets: {e}")
 
-        # 2. Fallback para ficheiro JSON local (caso exista no ambiente)
-        if cred is None and os.path.exists("firebase_key.json"):
-            try:
-                cred = credentials.Certificate("firebase_key.json")
-            except Exception as e:
-                st.error(f"Erro ao carregar firebase_key.json local: {e}")
-
         if cred is None:
-            raise FileNotFoundError("Credenciais do Firebase em falta ou inválidas nos Secrets e ficheiro local.")
+            raise FileNotFoundError("Credenciais do Firebase em falta ou inválidas nos Secrets.")
 
         firebase_admin.initialize_app(cred)
     return firestore.client()

@@ -16,18 +16,17 @@ def _cliente():
     if not firebase_admin._apps:
         cred = None
         
-        # 1. Tenta carregar do st.secrets (Streamlit Cloud) convertendo para dict puro
+        # 1. Tenta carregar do st.secrets (Streamlit Cloud)
         try:
-            if "firebase" in st.secrets:
+            if hasattr(st, "secrets") and "firebase" in st.secrets:
                 secret_dict = dict(st.secrets["firebase"])
-                # Garante que as quebras de linha na private_key são interpretadas corretamente
                 if "private_key" in secret_dict:
                     secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
                 cred = credentials.Certificate(secret_dict)
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"Erro ao ler st.secrets['firebase']: {e}")
 
-        # 2. Se falhar nos segredos, tenta carregar do arquivo JSON local (ambiente de desenvolvimento)
+        # 2. Tenta carregar do arquivo JSON local (ambiente de desenvolvimento)
         if cred is None and os.path.exists("firebase_key.json"):
             try:
                 cred = credentials.Certificate("firebase_key.json")
@@ -35,12 +34,18 @@ def _cliente():
                 pass
 
         if cred is None:
-            raise FileNotFoundError("Não foi possível iniciar o sistema. Verifique as credenciais em st.secrets['firebase'] e as dependências do requirements.txt.")
+            # Em vez de quebrar a aplicação inteira com FileNotFoundError direto na importação, 
+            # avisamos visualmente no Streamlit para facilitar o diagnóstico
+            st.error("⚠️ As credenciais do Firebase não foram detetadas nem nos Segredos da Nuvem nem no ficheiro local.")
+            raise FileNotFoundError("Credenciais do Firebase em falta.")
 
         firebase_admin.initialize_app(cred)
     return firestore.client()
 
-db = _cliente()
+try:
+    db = _cliente()
+except Exception as e:
+    db = None
 
 def _norm_email(email):
     return (email or "").strip().lower()
@@ -58,6 +63,8 @@ def _sha(txt):
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()
 
 def _doc_por_email(email):
+    if db is None:
+        return None
     email = _norm_email(email)
     if not email:
         return None
@@ -77,6 +84,8 @@ def _doc(d):
 
 # ----------------------------------------------------------------- AUTENTICAÇÃO E SESSÕES
 def autenticar(email, senha):
+    if db is None:
+        return None, "Erro de conexão com a base de dados."
     generico = "Credenciais inválidas. Verifique os dados."
     d = _doc_por_email(email)
     if not d or not senha:
@@ -103,6 +112,8 @@ def autenticar(email, senha):
     return res, ""
 
 def criar_sessao(uid):
+    if db is None:
+        return None
     token = secrets.token_urlsafe(32)
     db.collection("sessoes").document(_sha(token)).set({
         "uid": uid,
@@ -111,7 +122,7 @@ def criar_sessao(uid):
     return token
 
 def validar_sessao(token):
-    if not token:
+    if db is None or not token:
         return None
     ref = db.collection("sessoes").document(_sha(token))
     d = ref.get()
@@ -125,7 +136,7 @@ def validar_sessao(token):
     return u if u and u.get("ativo", True) else None
 
 def encerrar_sessao(token):
-    if token:
+    if db is not None and token:
         db.collection("sessoes").document(_sha(token)).delete()
 
 def buscar_usuario(email):
@@ -137,7 +148,7 @@ def buscar_usuario(email):
     return None
 
 def buscar_usuario_por_id(uid):
-    if not uid:
+    if db is None or not uid:
         return None
     d = db.collection("usuarios").document(uid).get()
     if d.exists:
@@ -147,6 +158,8 @@ def buscar_usuario_por_id(uid):
     return None
 
 def atualizar_senha(email, nova_senha):
+    if db is None:
+        return False
     try:
         query = db.collection("usuarios").where(filter=FieldFilter("email", "==", _norm_email(email))).limit(1).get()
         for doc in query:
@@ -161,6 +174,8 @@ def atualizar_senha(email, nova_senha):
 
 # ----------------------------------------------------------------- GESTÃO DE UTILIZADORES
 def cadastrar_usuario(dados, ator=None):
+    if db is None:
+        return False, "Base de dados indisponível."
     try:
         email = _norm_email(dados.get("email"))
         senha = dados.get("senha", "123456")
@@ -188,6 +203,8 @@ def cadastrar_usuario(dados, ator=None):
         return False, f"Erro ao cadastrar: {e}"
 
 def listar_usuarios_por_papel(role, criado_por=None):
+    if db is None:
+        return []
     try:
         users_ref = db.collection("usuarios")
         if criado_por:
@@ -205,6 +222,8 @@ def listar_usuarios_por_papel(role, criado_por=None):
         return []
 
 def excluir_usuario_por_id(user_id):
+    if db is None:
+        return False
     try:
         db.collection("usuarios").document(user_id).delete()
         return True
@@ -213,6 +232,8 @@ def excluir_usuario_por_id(user_id):
 
 # ----------------------------------------------------------------- TREINOS E EXCEL
 def importar_planilha_treino(arquivo_excel, email_cliente):
+    if db is None:
+        return False, "Base de dados indisponível."
     try:
         df = pd.read_excel(arquivo_excel)
         df.columns = [str(c).strip() for c in df.columns]
@@ -230,6 +251,8 @@ def importar_planilha_treino(arquivo_excel, email_cliente):
         return False, f"Erro ao processar planilha: {e}"
 
 def buscar_treino_cliente(email_cliente):
+    if db is None:
+        return None
     try:
         doc = db.collection("treinos").document(_norm_email(email_cliente)).get()
         if doc.exists:
@@ -239,6 +262,8 @@ def buscar_treino_cliente(email_cliente):
         return None
 
 def contar_treinos():
+    if db is None:
+        return 0
     try:
         return len(db.collection("treinos").get())
     except Exception:
@@ -246,6 +271,8 @@ def contar_treinos():
 
 # ----------------------------------------------------------------- CARGAS E CHECK-INS
 def registrar_carga_historico(email_cliente, nome_exercicio, carga_usada):
+    if db is None:
+        return False
     try:
         email_clean = _norm_email(email_cliente)
         ref = db.collection("historico_cargas").document(f"{email_clean}_{nome_exercicio.lower().replace(' ', '_')}")
@@ -261,6 +288,8 @@ def registrar_carga_historico(email_cliente, nome_exercicio, carga_usada):
         return False
 
 def buscar_ultima_carga(email_cliente, nome_exercicio):
+    if db is None:
+        return None
     try:
         email_clean = _norm_email(email_cliente)
         doc = db.collection("historico_cargas").document(f"{email_clean}_{nome_exercicio.lower().replace(' ', '_')}").get()
@@ -271,6 +300,8 @@ def buscar_ultima_carga(email_cliente, nome_exercicio):
         return None
 
 def registrar_checkin_banco(email_cliente):
+    if db is None:
+        return False
     try:
         email_clean = _norm_email(email_cliente)
         hoje_str = datetime.now().strftime("%Y-%m-%d")
@@ -288,6 +319,8 @@ def registrar_checkin_banco(email_cliente):
         return False
 
 def buscar_frequencia_semanal(email_cliente):
+    if db is None:
+        return set()
     try:
         email_clean = _norm_email(email_cliente)
         query = db.collection("checkins").where(filter=FieldFilter("email", "==", email_clean)).get()

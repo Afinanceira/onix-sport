@@ -16,15 +16,21 @@ def _cliente():
     if not firebase_admin._apps:
         cred = None
         
+        # 1. Tentar ler dos Segredos do Streamlit Cloud
         try:
             if hasattr(st, "secrets") and "firebase" in st.secrets:
-                # Converte o secret para dicionário padrão
                 sec = st.secrets["firebase"]
+                pk = str(sec.get("private_key", ""))
+                
+                # Tratamento robusto e limpeza da chave privada PEM
+                pk = pk.replace("\\n", "\n").strip()
+                pk = pk.strip('"\'')
+                
                 secret_dict = {
                     "type": str(sec.get("type", "service_account")),
                     "project_id": str(sec.get("project_id", "")),
                     "private_key_id": str(sec.get("private_key_id", "")),
-                    "private_key": str(sec.get("private_key", "")).replace("\\n", "\n"),
+                    "private_key": pk,
                     "client_email": str(sec.get("client_email", "")),
                     "client_id": str(sec.get("client_id", "")),
                     "auth_uri": str(sec.get("auth_uri", "https://accounts.google.com/o/oauth2/auth")),
@@ -34,10 +40,17 @@ def _cliente():
                 }
                 cred = credentials.Certificate(secret_dict)
         except Exception as e:
-            st.error(f"Erro ao processar credenciais: {e}")
+            st.error(f"Erro ao processar credenciais dos Secrets: {e}")
+
+        # 2. Fallback para ficheiro JSON local (caso exista no ambiente)
+        if cred is None and os.path.exists("firebase_key.json"):
+            try:
+                cred = credentials.Certificate("firebase_key.json")
+            except Exception as e:
+                st.error(f"Erro ao carregar firebase_key.json local: {e}")
 
         if cred is None:
-            raise FileNotFoundError("Credenciais do Firebase em falta ou inválidas nos Secrets.")
+            raise FileNotFoundError("Credenciais do Firebase em falta ou inválidas nos Secrets e ficheiro local.")
 
         firebase_admin.initialize_app(cred)
     return firestore.client()
@@ -46,6 +59,7 @@ try:
     db = _cliente()
 except Exception as e:
     db = None
+    st.error(f"Erro crítico ao inicializar a base de dados: {e}")
 
 def _norm_email(email):
     return (email or "").strip().lower()

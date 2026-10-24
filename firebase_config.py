@@ -16,28 +16,25 @@ def _cliente():
     if not firebase_admin._apps:
         cred = None
         
-        # 1. Tenta carregar do st.secrets (Streamlit Cloud)
-        try:
-            if hasattr(st, "secrets") and "firebase" in st.secrets:
+        # 1. Lê diretamente o ficheiro JSON que está na raiz do projeto/Git
+        if os.path.exists("firebase_key.json"):
+            try:
+                cred = credentials.Certificate("firebase_key.json")
+            except Exception as e:
+                st.error(f"Erro ao ler firebase_key.json: {e}")
+
+        # 2. Fallback caso queira usar st.secrets no futuro
+        if cred is None and hasattr(st, "secrets") and "firebase" in st.secrets:
+            try:
                 secret_dict = dict(st.secrets["firebase"])
                 if "private_key" in secret_dict:
                     secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
                 cred = credentials.Certificate(secret_dict)
-        except Exception as e:
-            st.error(f"Erro ao ler st.secrets['firebase']: {e}")
-
-        # 2. Tenta carregar do arquivo JSON local (ambiente de desenvolvimento)
-        if cred is None and os.path.exists("firebase_key.json"):
-            try:
-                cred = credentials.Certificate("firebase_key.json")
-            except Exception:
-                pass
+            except Exception as e:
+                st.error(f"Erro ao ler st.secrets: {e}")
 
         if cred is None:
-            # Em vez de quebrar a aplicação inteira com FileNotFoundError direto na importação, 
-            # avisamos visualmente no Streamlit para facilitar o diagnóstico
-            st.error("⚠️ As credenciais do Firebase não foram detetadas nem nos Segredos da Nuvem nem no ficheiro local.")
-            raise FileNotFoundError("Credenciais do Firebase em falta.")
+            raise FileNotFoundError("O ficheiro 'firebase_key.json' não foi encontrado na raiz do repositório.")
 
         firebase_admin.initialize_app(cred)
     return firestore.client()

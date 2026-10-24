@@ -16,29 +16,27 @@ def _cliente():
     if not firebase_admin._apps:
         cred = None
         
-        # 1. Lê diretamente o ficheiro JSON que está na raiz do projeto/Git
-        if os.path.exists("firebase_key.json"):
+        # Lê dos segredos do Streamlit Cloud
+        try:
+            if hasattr(st, "secrets") and "firebase" in st.secrets:
+                secret_dict = dict(st.secrets["firebase"])
+                cred = credentials.Certificate(secret_dict)
+        except Exception as e:
+            st.error(f"Erro ao ler st.secrets: {e}")
+
+        # Fallback para ficheiro local (caso testes no teu PC)
+        if cred is None and os.path.exists("firebase_key.json"):
             try:
                 cred = credentials.Certificate("firebase_key.json")
-            except Exception as e:
-                st.error(f"Erro ao ler firebase_key.json: {e}")
-
-        # 2. Fallback caso queira usar st.secrets no futuro
-        if cred is None and hasattr(st, "secrets") and "firebase" in st.secrets:
-            try:
-                secret_dict = dict(st.secrets["firebase"])
-                if "private_key" in secret_dict:
-                    secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
-                cred = credentials.Certificate(secret_dict)
-            except Exception as e:
-                st.error(f"Erro ao ler st.secrets: {e}")
+            except Exception:
+                pass
 
         if cred is None:
-            raise FileNotFoundError("O ficheiro 'firebase_key.json' não foi encontrado na raiz do repositório.")
+            raise FileNotFoundError("Credenciais do Firebase em falta nos Secrets.")
 
         firebase_admin.initialize_app(cred)
     return firestore.client()
-
+    
 try:
     db = _cliente()
 except Exception as e:

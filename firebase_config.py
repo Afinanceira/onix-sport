@@ -18,17 +18,20 @@ def _cliente():
         
         try:
             if hasattr(st, "secrets") and "firebase" in st.secrets:
-                secret_dict = dict(st.secrets["firebase"])
-                
-                # Garante que a chave privada tem o formato PEM correto com quebras de linha reais
-                if "private_key" in secret_dict:
-                    pk = secret_dict["private_key"]
-                    # Limpa eventuais barras invertidas duplas ou formatações erradas
-                    pk = pk.replace("\\n", "\n")
-                    if "-----BEGIN PRIVATE KEY-----" not in pk:
-                        pk = f"-----BEGIN PRIVATE KEY-----\n{pk}\n-----END PRIVATE KEY-----"
-                    secret_dict["private_key"] = pk
-
+                # Converte o secret para dicionário padrão
+                sec = st.secrets["firebase"]
+                secret_dict = {
+                    "type": str(sec.get("type", "service_account")),
+                    "project_id": str(sec.get("project_id", "")),
+                    "private_key_id": str(sec.get("private_key_id", "")),
+                    "private_key": str(sec.get("private_key", "")).replace("\\n", "\n"),
+                    "client_email": str(sec.get("client_email", "")),
+                    "client_id": str(sec.get("client_id", "")),
+                    "auth_uri": str(sec.get("auth_uri", "https://accounts.google.com/o/oauth2/auth")),
+                    "token_uri": str(sec.get("token_uri", "https://oauth2.googleapis.com/token")),
+                    "auth_provider_x509_cert_url": str(sec.get("auth_provider_x509_cert_url", "https://www.googleapis.com/oauth2/v1/certs")),
+                    "client_x509_cert_url": str(sec.get("client_x509_cert_url", ""))
+                }
                 cred = credentials.Certificate(secret_dict)
         except Exception as e:
             st.error(f"Erro ao processar credenciais: {e}")
